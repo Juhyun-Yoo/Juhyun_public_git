@@ -1,0 +1,7 @@
+pyinstaller -w -F --icon=duck.ico mouse.py
+
+#ModuleNotFoundError: No module named 'psutil' 에러 발생 시
+pyinstaller -w -F --icon=duck.ico --hidden-import=psutil mouse.py
+
+#용량 클 시 (아나콘다에서만 발생)
+pyinstaller -w -F --icon=duck.ico --exclude numpy --exclude pandas  mouse.py  
