@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # 크록스 주가 데이터 다운로드
-ticker = 'CROX'
+ticker = 'U'
 start_date = '2023-01-01'
 data = yf.download(ticker, start=start_date)
 
