@@ -109,24 +109,7 @@ def run_mode(mode):
             min_interval = '15'
             df = min_data(min_interval)
             df.to_csv("data.csv", index=False)
-            df = test_s.plot_candlestick_with_macd(df, show_bollinger=False, show_macd=True, show_ma=False)  #MA #RSI #MACD #BB #CCI
-            # MACD 교차점(매매 신호) 필터링
-            trade_signals = df[df['macd_cross'].notna()][['Close', 'macd_cross']].copy()
-
-            # 📌 DatetimeIndex를 time 컬럼으로 변환
-            trade_signals = trade_signals.reset_index().rename(columns={'time': 'Time'})
-
-            # 📌 인덱스를 맞춰 MACD와 Signal을 비교해 BUY/SELL 구분
-            trade_signals['Signal Type'] = np.where(
-                df.loc[trade_signals['Time'], 'MACD'].shift(1) < df.loc[trade_signals['Time'], 'Signal'].shift(1),
-                'BUY',
-                'SELL'
-            )
-
-            # 📊 최종 결과 출력
-            print("\n📌 MACD 매매 신호 발생 시점:")
-            print(trade_signals[['Time', 'Close', 'Signal Type']])
-            
+            df = test_s.plot_candlestick_with_macd(df, show_bollinger=False, show_macd=True, show_ma=False)  #MA #RSI #MACD #BB #CCI 
             rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
                 div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
             )
