@@ -105,7 +105,7 @@ def run_mode(mode):
             print("🔵 전략 개발 모드 (T) 실행")
             ka.auth()  # 한투 API 인증
 
-            # 해외 주식 분봉 데이터 조회 (SOXL, 60분봉)
+            # 해외 주식 분봉 데이터 조회 (SOXL, 분봉)
             min_interval = '15'
             df = min_data(min_interval)
             df.to_csv("data.csv", index=False)
