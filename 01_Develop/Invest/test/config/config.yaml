@@ -1,0 +1,21 @@
+#홈페이지에서 API서비스 신청시 받은 Appkey, Appsecret 값 설정
+my_app: "PSvGxd8ua2HXDTpZ2HtCbvMUJDgDg8WQeDS0"
+my_sec: "zAvng6EL6h1sGHq72tyrV+Saz2Tvhzw6zGZVOyRXpYtBL2owK/71QgSmRAVHfz44EGOv459U68JdbU5ZPEpw5IHCtdpPa0sM7os5YwoRBPr0vEjWlwcFFUEnsDlgM/42ZtLpjDE5H+xyaaaHf/yRHcX8dVSSWxszz6dj2hZKBNiArF9Al5Q="
+
+APP_KEY_2: "PS4tYhwfd7aBfUyZiw6KA3k3rEJtDpFP9Qa7"
+APP_SECRET_2: "6OqGRGV6HibNe8ZXRdLf4XShh5DrmjOerc7uRyeiJkrkg1RhLHUv0SxsenKAdr+ndz+MGHnx+xIVVgoy9rTRqoVwrcFHh65ZGXaZiOJFu5D9TSnzoWJXxAcIoacQnf8Rt+b+cWE9oBlIC7tVSUSr//XwoNy1nSiPNrB3794USLikHao6aiI="
+#계좌번호 앞 8자리
+my_acct: "46137617"
+CANO_2: "50123442"
+#계좌번호 뒤 2자리
+my_prod: "01"
+ACNT_PRDT_CD_2: ""
+#실전투자
+my_url: "https://openapi.koreainvestment.com:9443"
+#모의투자
+URL_BASE_2: "https://openapivts.koreainvestment.com:29443"
+
+#디스코드 웹훅 URL
+DISCORD_WEBHOOK_URL: "https://discordapp.com/api/webhooks/1326693598577557504/hmiYO3Ohjm2KvqcaJ2VGxOCldw55igGw8Jt87JhehQk3G8H6cDVCYy9jic711xTRjXu9"
+
+my_agent : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
