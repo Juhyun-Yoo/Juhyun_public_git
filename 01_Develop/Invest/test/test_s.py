@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 
-def plot_candlestick_with_macd(df, show_bollinger=True, show_macd=True, show_ma=True):
+def plot_candlestick_with_macd(df, show_rsi=True, show_macd=True, show_bollinger=True):
     # ✅ 날짜 데이터를 변환하고 정렬
     df['time'] = pd.to_datetime(df['time'])
     df = df.sort_values(by='time')
@@ -23,6 +23,7 @@ def plot_candlestick_with_macd(df, show_bollinger=True, show_macd=True, show_ma=
     # ✅ 최고점 추적 변수
     highest_price = 0
     holding = False  # 현재 포지션 상태 (True: 매수 상태, False: 대기)
+    last_signal = None  # 마지막으로 발생한 신호 ('buy' 또는 'sell')
 
     apds = []
     
@@ -66,7 +67,37 @@ def plot_candlestick_with_macd(df, show_bollinger=True, show_macd=True, show_ma=
             mpf.make_addplot(df['Signal'], panel=0, color='orange', width=0.8, secondary_y=True, label="MACD Signal"),
             mpf.make_addplot(df['Histogram'], panel=0, type='bar', color='gray', alpha=0.3, secondary_y=True, label="MACD Histogram"),
         ])
+    
+    if show_rsi:
+        # ✅ RSI(14) 계산
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
 
+        # ✅ RSI 기반 매매 신호 (연속 신호 방지)
+        for i in range(len(df)):
+            if last_signal != 'buy' and df['RSI'].iloc[i] <= 20:
+                df.at[df.index[i], 'buy_signal'] = True
+                last_signal = 'buy'
+            elif last_signal != 'sell' and df['RSI'].iloc[i] >= 80:
+                df.at[df.index[i], 'sell_signal'] = True
+                last_signal = 'sell'
+
+        apds.append(mpf.make_addplot(df['RSI'], panel=1, color='blue', width=0.8, ylabel='RSI'))
+    
+    if show_bollinger:
+        # ✅ 볼린저 밴드 계산
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['UpperBB'] = df['MA20'] + (df['Close'].rolling(window=20).std() * 2)
+        df['LowerBB'] = df['MA20'] - (df['Close'].rolling(window=20).std() * 2)
+        
+        apds.extend([
+            mpf.make_addplot(df['UpperBB'], color='red', linestyle='dashed', width=1, label='Upper BB'),
+            mpf.make_addplot(df['LowerBB'], color='blue', linestyle='dashed', width=1, label='Lower BB')
+        ])
+    
     # ✅ 매수 및 매도 신호를 저장할 컬럼 추가 (신호가 없는 경우 NaN)
     df['buy_marker'] = np.where(df['buy_signal'], df['Close'], np.nan)
     df['sell_marker'] = np.where(df['sell_signal'], df['Close'], np.nan)
@@ -75,10 +106,9 @@ def plot_candlestick_with_macd(df, show_bollinger=True, show_macd=True, show_ma=
     apds.append(mpf.make_addplot(df['buy_marker'], scatter=True, marker='^', color='green', markersize=100, label="Buy Signal"))
     apds.append(mpf.make_addplot(df['sell_marker'], scatter=True, marker='v', color='red', markersize=100, label="Sell Signal"))
 
-
     # ✅ 캔들차트 출력
     fig, axes = mpf.plot(df, type='candle', volume=True, style='charles', 
-                         title='Candle chart & MACD signal',
+                         title='Candle chart & MACD/RSI/Bollinger signals',
                          ylabel='Price', ylabel_lower='Volume', addplot=apds,
                          figsize=(14, 8), returnfig=True)
 

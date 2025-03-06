@@ -88,6 +88,7 @@ def min_data(min_interval):
             )
     df = data_formatting(rt_data)
     return df
+
 def run_mode(mode):
     """
     선택한 실행 모드에 따라 작업을 수행.
@@ -100,6 +101,10 @@ def run_mode(mode):
             # TODO: 실제 매매 관련 코드 추가
         elif mode == '2':
             print("🟡 모의투자 모드 (V) 실행")
+            ka.auth(svr='vps')
+            min_interval = '15'
+            df = min_data(min_interval)
+            print(df)
             # TODO: 모의투자 관련 코드 추가
         elif mode == '3':
             print("🔵 전략 개발 모드 (T) 실행")
@@ -109,7 +114,7 @@ def run_mode(mode):
             min_interval = '15'
             df = min_data(min_interval)
             df.to_csv("data.csv", index=False)
-            df = test_s.plot_candlestick_with_macd(df, show_bollinger=False, show_macd=True, show_ma=False)  #MA #RSI #MACD #BB #CCI 
+            df = test_s.plot_candlestick_with_macd(df, show_rsi=True, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI 
             rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
                 div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
             )

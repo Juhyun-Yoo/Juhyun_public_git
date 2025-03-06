@@ -34,9 +34,9 @@ clearConsole = lambda: os.system('cls' if os.name in ('nt', 'dos') else 'clear')
 key_bytes = 32
 path = os.getcwd()
 config_root = path+'\\config\\'  # 토큰 파일이 저장될 폴더, 제3자가 찾지 어렵도록 경로 설정하시기 바랍니다.
-#token_tmp = config_root + 'KIS000000'  # 토큰 로컬저장시 파일 이름 지정, 파일이름을 토큰값이 유추가능한 파일명은 삼가바랍니다.
+token_tmp_vps = config_root + 'KIS000000'  # 토큰 로컬저장시 파일 이름 지정, 파일이름을 토큰값이 유추가능한 파일명은 삼가바랍니다.
 #token_tmp = config_root + 'KIS' + datetime.today().strftime("%Y%m%d%H%M%S")  # 토큰 로컬저장시 파일명 년월일시분초
-token_tmp = config_root + 'KIS' + datetime.today().strftime("%Y%m%d")  # 토큰 로컬저장시 파일명 년월일
+token_tmp = config_root + 'KIS' + datetime.today().strftime("%Y%m%d")   # 토큰 로컬저장시 파일명 년월일
 
 # 접근토큰 관리하는 파일 존재여부 체크, 없으면 생성
 if os.path.exists(token_tmp) == False:
@@ -63,36 +63,63 @@ _base_headers = {
 
 
 # 토큰 발급 받아 저장 (토큰값, 토큰 유효시간,1일, 6시간 이내 발급신청시는 기존 토큰값과 동일, 발급시 알림톡 발송)
-def save_token(my_token, my_expired):
+def save_token(my_token, my_expired, svr = 'my_prod'):
     valid_date = datetime.strptime(my_expired, '%Y-%m-%d %H:%M:%S')
     # print('Save token date: ', valid_date)
-    with open(token_tmp, 'w', encoding='utf-8') as f:
-        f.write(f'token: {my_token}\n')
-        f.write(f'valid-date: {valid_date}\n')
+    if svr == 'my_prod':
+        with open(token_tmp, 'w', encoding='utf-8') as f:
+            f.write(f'token: {my_token}\n')
+            f.write(f'valid-date: {valid_date}\n')
+    elif svr == 'vps':
+        with open(token_tmp_vps, 'w', encoding='utf-8') as f:
+            f.write(f'token: {my_token}\n')
+            f.write(f'valid-date: {valid_date}\n')
 
 
 # 토큰 확인 (토큰값, 토큰 유효시간_1일, 6시간 이내 발급신청시는 기존 토큰값과 동일, 발급시 알림톡 발송)
-def read_token():
-    try:
-        # 토큰이 저장된 파일 읽기
-        with open(token_tmp, encoding='UTF-8') as f:
-            tkg_tmp = yaml.load(f, Loader=yaml.FullLoader)
+def read_token(svr='my_prod'):
+    if svr == 'my_prod':
+        try:
+            # 토큰이 저장된 파일 읽기
+            with open(token_tmp, encoding='UTF-8') as f:
+                tkg_tmp = yaml.load(f, Loader=yaml.FullLoader)
 
-        # 토큰 만료 일,시간
-        exp_dt = datetime.strftime(tkg_tmp['valid-date'], '%Y-%m-%d %H:%M:%S')
-        # 현재일자,시간
-        now_dt = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+            # 토큰 만료 일,시간
+            exp_dt = datetime.strftime(tkg_tmp['valid-date'], '%Y-%m-%d %H:%M:%S')
+            # 현재일자,시간
+            now_dt = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
 
-        # print('expire dt: ', exp_dt, ' vs now dt:', now_dt)
-        # 저장된 토큰 만료일자 체크 (만료일시 > 현재일시 인경우 보관 토큰 리턴)
-        if exp_dt > now_dt:
-            return tkg_tmp['token']
-        else:
-            # print('Need new token: ', tkg_tmp['valid-date'])
+            # print('expire dt: ', exp_dt, ' vs now dt:', now_dt)
+            # 저장된 토큰 만료일자 체크 (만료일시 > 현재일시 인경우 보관 토큰 리턴)
+            if exp_dt > now_dt:
+                return tkg_tmp['token']
+            else:
+                # print('Need new token: ', tkg_tmp['valid-date'])
+                return None
+        except Exception as e:
+            # print('read token error: ', e)
             return None
-    except Exception as e:
-        # print('read token error: ', e)
-        return None
+    elif svr == 'vps':
+        try:
+            # 토큰이 저장된 파일 읽기
+            with open(token_tmp_vps, encoding='UTF-8') as f:
+                tkg_tmp = yaml.load(f, Loader=yaml.FullLoader)
+
+            # 토큰 만료 일,시간
+            exp_dt = datetime.strftime(tkg_tmp['valid-date'], '%Y-%m-%d %H:%M:%S')
+            # 현재일자,시간
+            now_dt = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+
+            # print('expire dt: ', exp_dt, ' vs now dt:', now_dt)
+            # 저장된 토큰 만료일자 체크 (만료일시 > 현재일시 인경우 보관 토큰 리턴)
+            if exp_dt > now_dt:
+                return tkg_tmp['token']
+            else:
+                # print('Need new token: ', tkg_tmp['valid-date'])
+                return None
+        except Exception as e:
+            # print('read token error: ', e)
+            return None
 
 # 토큰 유효시간 체크해서 만료된 토큰이면 재발급처리
 def _getBaseHeader():
@@ -134,6 +161,7 @@ def changeTREnv(token_key, svr='my_prod', product=_cfg['my_prod']):
     elif svr == 'vps':  # 모의투자
         ak1 = 'paper_app'  # 모의투자용 앱키
         ak2 = 'paper_sec'  # 모의투자용 앱시크리트
+        url = 'paper_url'
         _isPaper = True
 
     cfg['my_app'] = _cfg[ak1]
@@ -181,13 +209,14 @@ def auth(svr='my_prod', product=_cfg['my_prod'], url=None):
     elif svr == 'vps':  # 모의투자
         ak1 = 'paper_app'  # 앱키 (모의투자용)
         ak2 = 'paper_sec'  # 앱시크리트 (모의투자용)
+        url = 'paper_url'
 
     # 앱키, 앱시크리트 가져오기
     p["appkey"] = _cfg[ak1]
     p["appsecret"] = _cfg[ak2]
 
     # 기존 발급된 토큰이 있는지 확인
-    saved_token = read_token()  # 기존 발급 토큰 확인
+    saved_token = read_token(svr)  # 기존 발급 토큰 확인
     # print("saved_token: ", saved_token)
     if saved_token is None:  # 기존 발급 토큰 확인이 안되면 발급처리
         url = f'{_cfg[url]}/oauth2/tokenP'
@@ -196,7 +225,7 @@ def auth(svr='my_prod', product=_cfg['my_prod'], url=None):
         if rescode == 200:  # 토큰 정상 발급
             my_token = _getResultObject(res.json()).access_token  # 토큰값 가져오기
             my_expired= _getResultObject(res.json()).access_token_token_expired  # 토큰값 만료일시 가져오기
-            save_token(my_token, my_expired)  # 새로 발급 받은 토큰 저장
+            save_token(my_token, my_expired, svr)  # 새로 발급 받은 토큰 저장
         else:
             print('Get Authentification token fail!\nYou have to restart your app!!!')
             return

@@ -38,7 +38,7 @@ def get_overseas_price_quot_inquire_time_itemchartprice(div="02", excd="", itm_n
         "NEXT": "0",         # (사용안함)다음여부
         "NREC": "120",      # 요청갯수 레코드요청갯수 (최대 120)
         "FILL": "",         # (사용안함)미체결채움구분
-        "KEYB": ""          # (사용안함)NEXT KEY BUFF
+        "KEYB": "2025010100"          # (사용안함)NEXT KEY BUFF
     }
     res = kis._url_fetch(url, tr_id, tr_cont, params)
 
