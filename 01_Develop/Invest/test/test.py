@@ -6,6 +6,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pytz import timezone
 import numpy as np
+import time
+
 class Time:
     """
     미국 주식 거래 시간을 관리하는 클래스.
@@ -89,31 +91,6 @@ def min_data(min_interval):
     df = data_formatting(rt_data)
     return df
 
-def convert_to_dataframe(data):
-    if "output2" in data:
-        # output2 데이터를 데이터프레임으로 변환
-        df = pd.DataFrame(data["output2"])
-        
-        # 필요한 열만 선택 및 시간 데이터 처리
-        df = df[['tymd', 'xhms', 'open', 'high', 'low', 'last', 'evol', 'eamt']]
-        df['datetime'] = pd.to_datetime(df['tymd'] + df['xhms'], format='%Y%m%d%H%M%S')
-        
-        # 데이터프레임 정리 (시간 순서대로 정렬)
-        df = df.sort_values(by='datetime').reset_index(drop=True)
-        
-        # 필요 없는 열 삭제
-        df.drop(columns=['tymd', 'xhms'], inplace=True)
-        
-        return df
-    else:
-        return pd.DataFrame()
-
-def get_next_keyb(output2, nmin):
-    last_record = output2[-1]
-    last_time_str = last_record["xymd"] + last_record["xhms"]  # YYYYMMDDHHMMSS 형태의 문자열
-    last_time = datetime.strptime(last_time_str, "%Y%m%d%H%M%S")  # 문자열을 datetime 객체로 변환
-    next_keyb_time = last_time - timedelta(minutes=nmin)  # nmin 값만큼 이전 시간 계산
-    return next_keyb_time.strftime("%Y%m%d%H%M%S")  # 다시 문자열로 변환하여 반환
 
 def run_mode(mode):
     """
@@ -128,54 +105,26 @@ def run_mode(mode):
         elif mode == '2':
             print("🟡 모의투자 모드 (V) 실행")
             ka.auth(svr='vps')
-            nmin = '15'
-            period = '4'
-            first_call = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                div="02", excd="AMS", itm_no="SOXL", nmin=nmin, pinc="1", keyb=keyb
-            )
-            if not first_call:
-                return
-            
-            # 첫 조회 데이터 변환 및 저장
-            df = convert_to_dataframe(first_call)
-            all_data = pd.concat([all_data, df], ignore_index=True)
 
-            # 다음 조회를 위한 변수 초기화
-            next_value = first_call["output1"]["next"]
-            keyb = get_next_keyb(first_call["output2"], nmin)  # nmin에 따라 1분 또는 n분 전 시간 계산
-            
-            for _ in range(period - 1):
-                # 다음 조회 실행
-                next_call = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                    div="02", excd="AMS", itm_no="SOXL", nmin=nmin, pinc="1", next_value=next_value, keyb=keyb
-                )
-                if not next_call:
-                    break
-                
-                # 다음 조회 데이터 변환 및 저장
-                df = convert_to_dataframe(next_call)
-                all_data = pd.concat([all_data, df], ignore_index=True)
-                
-                # 다음 조회를 위한 keyb 및 next 값 갱신
-                next_value = next_call["output1"]["next"]
-                keyb = get_next_keyb(next_call["output2"], nmin)  # nmin에 따라 갱신된 keyb 값
-                
-            # 결과 데이터프레임을 시간순으로 정렬하여 저장
-            all_data = all_data.sort_values(by='datetime').reset_index(drop=True).drop_duplicates() # 중복 제거
-            all_data.to_csv(f'fetched_data.csv', index=False)  # CSV 파일로 저장
-            print(f"데이터가 CSV 파일로 저장되었습니다.")
+            # 해외 주식 분봉 데이터 조회 (SOXL, 분봉)
+            min_interval = '15'
+            rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+                div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1",next_value = "1", keyb = "20250306094500"
+            )
+            print('A')
+
         elif mode == '3':
             print("🔵 전략 개발 모드 (T) 실행")
-            ka.auth()  # 한투 API 인증
+            ka.auth(svr='vps')  # 한투 API 인증
 
             # 해외 주식 분봉 데이터 조회 (SOXL, 분봉)
             min_interval = '15'
             df = min_data(min_interval)
             df.to_csv("data.csv", index=False)
             df = test_s.plot_candlestick_with_macd(df, show_rsi=True, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI 
-            rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
-                div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
-            )
+            #rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
+            #    div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
+            #)
 
             # 📊 원본 데이터 출력
             #print("📊 해외 주식 데이터 조회 결과:")

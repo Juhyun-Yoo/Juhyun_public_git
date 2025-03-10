@@ -1,8 +1,9 @@
 import kis_auth as kis
 import pandas as pd
 from collections import namedtuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from pandas import DataFrame
+
 ##############################################################################################
 # [해외주식] 기본시세 > 해외주식분봉조회
 # 해외주식분봉조회 API입니다.
