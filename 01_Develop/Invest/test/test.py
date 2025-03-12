@@ -91,6 +91,34 @@ def min_data(min_interval):
     df = data_formatting(rt_data)
     return df
 
+def min_massdata(min_interval, cnt):
+    formatted_time = ""
+    df_combined = pd.DataFrame()  # 데이터를 누적 저장할 빈 DataFrame 생성
+
+    for i in range(cnt):
+        if i == 0:
+            rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+                div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1"
+            )
+        else:
+            rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+                div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, 
+                pinc="1", next_value="1", keyb=formatted_time
+            )
+
+        df = data_formatting(rt_data)  # API에서 받아온 데이터 정리
+
+        if df.empty:  # 데이터가 비어 있으면 중단
+            print("No more data available.")
+            break
+
+        last_time = df.iloc[-1]['time']  # 마지막 인덱스의 time 값
+        formatted_time = pd.to_datetime(last_time).strftime('%Y%m%d%H%M%S')
+
+        # 기존 데이터와 새로운 데이터 합치기
+        df_combined = pd.concat([df_combined, df], ignore_index=True)
+        time.sleep(0.5)
+    return df_combined  # 누적된 데이터를 반환
 
 def run_mode(mode):
     """
@@ -108,11 +136,11 @@ def run_mode(mode):
 
             # 해외 주식 분봉 데이터 조회 (SOXL, 분봉)
             min_interval = '15'
-            rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1",next_value = "1", keyb = "20250306094500"
-            )
-            print('A')
-
+            cnt = 3 # 반복 횟수
+            df = min_massdata(min_interval, cnt)
+            df.to_csv("data.csv", index=False)
+            df = test_s.plot_candlestick_with_macd(df, show_rsi=True, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI 
+            df.to_csv("data.csv", index=True)
         elif mode == '3':
             print("🔵 전략 개발 모드 (T) 실행")
             ka.auth(svr='vps')  # 한투 API 인증
@@ -121,7 +149,7 @@ def run_mode(mode):
             min_interval = '15'
             df = min_data(min_interval)
             df.to_csv("data.csv", index=False)
-            df = test_s.plot_candlestick_with_macd(df, show_rsi=True, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI 
+            df = test_s.plot_candlestick_with_macd(df, show_rsi=False, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI 
             #rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
             #    div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
             #)
