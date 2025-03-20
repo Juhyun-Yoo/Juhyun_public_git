@@ -25,7 +25,7 @@ from pandas import DataFrame
 # 해외주식 해외주식분봉조회 시세 Object를 DataFrame 으로 반환
 # Input: None (Option) 상세 Input값 변경이 필요한 경우 API문서 참조
 # Output: DataFrame (Option) output
-def get_overseas_price_quot_inquire_time_itemchartprice(div="02", excd="", itm_no="", nmin="", pinc="0", tr_cont="", dataframe=None, next_value = "0", keyb=""):
+def get_overseas_price_quot_inquire_time_itemchartprice(div="02", excd="", itm_no="", nmin="", pinc="0", tr_cont="", dataframe=None, next_value = "0",nrec = "120", keyb=""):
     url = '/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice'
     tr_id = "HHDFS76950200" # 해외주식 해외주식분봉조회
 
@@ -37,7 +37,7 @@ def get_overseas_price_quot_inquire_time_itemchartprice(div="02", excd="", itm_n
         "NMIN": nmin,       # 분갭 분단위(1: 1분봉, 2: 2분봉, ...)
         "PINC": pinc,       # 전일포함여부(0:당일 1:전일포함)
         "NEXT": next_value,         # (사용안함)다음여부
-        "NREC": "120",      # 요청갯수 레코드요청갯수 (최대 120)
+        "NREC": nrec,      # 요청갯수 레코드요청갯수 (최대 120)
         "FILL": "",         # (사용안함)미체결채움구분
         "KEYB": keyb          # (사용안함)NEXT KEY BUFF
     }
