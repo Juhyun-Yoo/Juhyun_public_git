@@ -7,10 +7,22 @@ from datetime import datetime, timedelta
 from pytz import timezone
 import numpy as np
 import time
-
+import requests
+import yaml
 # 전역 변수: 1분 데이터를 저장할 DataFrame와 기준 시작 시간
 global_minute_data = pd.DataFrame()
 global_start_time = None
+
+with open('config/config.yaml', encoding='UTF-8') as f:
+    _cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+DISCORD_WEBHOOK_URL = _cfg['DISCORD_WEBHOOK_URL']
+def send_message(msg):
+    """디스코드 메세지 전송"""
+    now = datetime.datetime.now()
+    message = {"content": f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] {str(msg)}"}
+    requests.post(DISCORD_WEBHOOK_URL, data=message)
+    print(message)
 
 class Time:
     """
@@ -96,13 +108,19 @@ def data_formatting(data):
     return df_rt_filtered
 
 
-def min_data(min_interval):
+def min_data(min_interval, min = False):
     """
     1분 단위의 데이터를 가져오는 함수.
     """
-    rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1"
-            )
+    if min:
+        rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+                    div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1",
+                    nrec='1'
+                )
+    elif min == False:
+        rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+                    div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1"
+                )
     df = data_formatting(rt_data)
     return df
 
@@ -193,7 +211,7 @@ def run_mode(mode):
     :param mode: 실행 모드 (1: 실제 매매, 2: 모의투자, 3: 전략 개발)
     """
     global global_minute_data, global_start_time  # 전역 변수 사용
-    
+
     try:
         if mode == '1':
             print("🟢 실제 매매 모드 (R) 실행")
@@ -201,10 +219,10 @@ def run_mode(mode):
             
         elif mode == '2':
             print("🟡 모의투자 모드 (V) 실행")
-            ka.auth(svr='vps')
-
+            svr = 'vps'
+            ka.auth(svr)
             
-            # 1️⃣ 초기 실행: 다량의 1분 데이터를 받아옴 (예: cnt=10)
+            # 1️⃣ 초기 실행: 다량의 1분 데이터를 받아옴
             min_interval = '1'  # 1분 데이터
             cnt = 10
             print("초기 1분 데이터 수집 중 (min_massdata)...")
@@ -214,40 +232,51 @@ def run_mode(mode):
                 print("⚠️ 초기 데이터 수집 실패")
                 return
             
-            # 기준 시작 시간은 초기 데이터의 첫 time
             global_minute_data['time'] = pd.to_datetime(global_minute_data['time'])
             global_start_time = global_minute_data.iloc[0]['time']
             
-            # 집계 간격 설정 (원하는 간격: 예를 들어 15, 30, 60분 등)
-            agg_minutes = 15  # 여기서 원하는 값으로 변경 가능
+            agg_minutes = 15  # 집계 간격 설정
             
-            # 초기 1분 데이터를 집계하여 파일로 저장
             aggregated_data = aggregate_rolling(global_minute_data, agg_minutes, start_time=global_start_time)
             aggregated_data.to_csv("aggregated_data.csv", index=False)
             print("초기 집계 데이터 저장 완료 (aggregated_data.csv)")
-            df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI
-            # 2️⃣ 이후, 1분마다 새 데이터를 받아 rolling 방식으로 집계 데이터 갱신
-            while True:
-                print("1분 대기 중...")
-                time.sleep(60)  # 1분 대기 (실제 환경에서는 60초)
-                print("새로운 1분 데이터 수집 중 (min_data)...")
-                new_data = min_data(min_interval)
-                if new_data.empty:
-                    print("새로운 데이터가 없습니다. 다음 주기로 넘어갑니다.")
-                    continue
+            df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False, show_volume=False)
 
-                # 새로운 데이터의 'time' 컬럼을 datetime으로 변환 후 추가
-                new_data['time'] = pd.to_datetime(new_data['time'])
+            now = datetime.now(timezone('America/New_York'))
+            last_minute = df.iloc[-1].name.minute if not df.empty else None
+            buy_signal = df['buy_signal'].iloc[-1] if not df.empty else False
+            current_minute = now.minute
                 
-                # 기존 1분 데이터와 합치고 중복 제거 후 정렬
-                global_minute_data = pd.concat([global_minute_data, new_data]).drop_duplicates(subset='time').sort_values('time')
+            execution_flag = (last_minute == current_minute and buy_signal)
+            
+            rt_data = test_api.get_overseas_inquire_present_balance(svr='vps')
+
+            if execution_flag:
+                send_message("매수신호 발생")
+
+            # 2️⃣ 매분 3초마다 실행
+            while True:
+                now = datetime.now(timezone('America/New_York'))
+                second = now.second
+                buy_signal = False
+
+                if second == 3:
+                    print(f"[{now.strftime('%H:%M:%S')}] 새로운 1분 데이터 수집 중 (min_data)...")
+                    new_data = min_data(min_interval, min=True)
+                    if new_data.empty:
+                        print("새로운 데이터가 없습니다. 다음 주기로 넘어갑니다.")
+                        continue
+
+                    new_data['time'] = pd.to_datetime(new_data['time'])
+                    global_minute_data = pd.concat([global_minute_data, new_data]).drop_duplicates(subset='time').sort_values('time')
+                    
+                    aggregated_data = aggregate_rolling(global_minute_data, agg_minutes, start_time=global_start_time)
+                    aggregated_data.to_csv("aggregated_data.csv", index=False)
+                    print("집계 데이터 업데이트 완료:")
+                    df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False, show_volume=False)
+                    print("차트 분석 완료")
                 
-                # rolling 방식으로 전체 1분 데이터를 집계
-                aggregated_data = aggregate_rolling(global_minute_data, agg_minutes, start_time=global_start_time)
-                aggregated_data.to_csv("aggregated_data.csv", index=False)
-                print("집계 데이터 업데이트 완료:")
-                df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False)  #MA #RSI #MACD #BB #CCI
-                print(aggregated_data.tail())
+                time.sleep(0.5)  # 0.5초마다 체크하여 정확한 타이밍 유지
 
         elif mode == '3':
             print("🔵 전략 개발 모드 (T) 실행")
