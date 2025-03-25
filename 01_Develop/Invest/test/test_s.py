@@ -52,18 +52,15 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
 
             ny_time = current_time.tz_convert('America/New_York')
 
-            # ✅ MACD 골든크로스 + 거래량 급증 시 매수 신호 강화
+            # ✅ MACD 골든크로스 매수 
             if df['MACD'].iloc[i-1] < df['Signal'].iloc[i-1] and df['MACD'].iloc[i] > df['Signal'].iloc[i]:
-                if show_volume and df['Volume Spike'].iloc[i]:  # ✅ 거래량 급증 시 신호 강화
-                    df.at[df.index[i], 'buy_signal'] = True
-                elif not show_volume:
-                    df.at[df.index[i], 'buy_signal'] = True
+                df.at[df.index[i], 'buy_signal'] = True
                 highest_price = current_price
                 holding = True
                 first_buy_signal_occurred = True
 
             # ✅ MACD 데드크로스 매도
-            elif holding and first_buy_signal_occurred and df['MACD'].iloc[i-1] > df['Signal'].iloc[i-1] and df['MACD'].iloc[i] < df['Signal'].iloc[i]:
+            elif df['MACD'].iloc[i-1] > df['Signal'].iloc[i-1] and df['MACD'].iloc[i] < df['Signal'].iloc[i]:
                 df.at[df.index[i], 'sell_signal'] = True
                 holding = False
 
@@ -88,9 +85,9 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
         df['RSI'] = 100 - (100 / (1 + rs))
 
         for i in range(len(df)):
-            if df['RSI'].iloc[i] <= 30 and is_regular_trading_hours(df.index[i]):
+            if df['RSI'].iloc[i] <= 20 and is_regular_trading_hours(df.index[i]):
                 df.at[df.index[i], 'buy_signal'] = True
-            elif df['RSI'].iloc[i] >= 70 and is_regular_trading_hours(df.index[i]):
+            elif df['RSI'].iloc[i] >= 80 and is_regular_trading_hours(df.index[i]):
                 df.at[df.index[i], 'sell_signal'] = True
 
         apds.append(mpf.make_addplot(df['RSI'], panel=1, color='blue', width=0.8, ylabel='RSI'))

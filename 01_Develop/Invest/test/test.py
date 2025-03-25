@@ -1,136 +1,55 @@
-import json
-import pprint
-import test_api, test_s
+import pymysql
+import yaml
+import time
+import threading
+import test_api
+import test_s
 import kis_auth as ka
 import pandas as pd
-from datetime import datetime, timedelta
-from pytz import timezone
-import numpy as np
-import time
 import requests
-import yaml
-# 전역 변수: 1분 데이터를 저장할 DataFrame와 기준 시작 시간
-global_minute_data = pd.DataFrame()
-global_start_time = None
+from datetime import datetime, timedelta, time as dt_time
+from pytz import timezone
+import warnings
 
-with open('config/config.yaml', encoding='UTF-8') as f:
-    _cfg = yaml.load(f, Loader=yaml.FullLoader)
+warnings.filterwarnings("ignore", category=UserWarning, message="pandas only supports SQLAlchemy connectable")
 
-DISCORD_WEBHOOK_URL = _cfg['DISCORD_WEBHOOK_URL']
-def send_message(msg):
-    """디스코드 메세지 전송"""
-    now = datetime.datetime.now()
-    message = {"content": f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] {str(msg)}"}
-    requests.post(DISCORD_WEBHOOK_URL, data=message)
-    print(message)
+# 🔹 config.yaml에서 DB 설정 읽기
+with open("config//config.yaml", "r", encoding="utf-8") as file:
+    config = yaml.safe_load(file)
 
-class Time:
-    """
-    미국 주식 거래 시간을 관리하는 클래스.
-    """
-    
-    def __init__(self):
-        """
-        현재 뉴욕 시간을 기준으로 미국 주식 시장 주요 시간을 설정.
-        """
-        self.t_now_usa = self._get_ny_time()
-        self.t_open_usa = self._set_time(9, 30)    # 개장
-        self.t_start_usa = self._set_time(9, 45)   # 매매 시작 (개장 후 15분)
-        self.t_sell_usa = self._set_time(15, 45)   # 매매 종료 (폐장 15분 전)
-        self.t_exit_usa = self._set_time(16, 0)    # 폐장
-
-    @staticmethod
-    def _get_ny_time():
-        """현재 미국 뉴욕 시간을 반환."""
-        return datetime.now(timezone('America/New_York'))
-
-    def _set_time(self, hour, minute):
-        """지정된 시간으로 설정."""
-        return self._get_ny_time().replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-
-def check_balance(broker):
-    """
-    계좌 잔고를 조회하여 총 평가 금액을 반환.
-
-    :param broker: 거래 API 객체
-    :return: 총 평가 금액 (int)
-    """
-    try:
-        balance = broker.fetch_present_balance()
-        return balance["output3"]["tot_asst_amt"]
-    except KeyError:
-        print("⚠️ 잔고 조회 실패: 응답 데이터 구조가 예상과 다릅니다.")
-        return None
-    except Exception as e:
-        print(f"⚠️ 오류 발생: {e}")
-        return None
-
-
-def data_formatting(data):
-    """
-    rt_data를 DataFrame으로 변환 후 필요한 컬럼만 선택하여 가공.
-    date와 time을 합쳐 YYYY-MM-DD HH:MM 형식으로 변환하고,
-    volume과 eamt 컬럼을 숫자형으로 변환.
-    
-    :param data: 원본 데이터 (JSON 또는 딕셔너리 형태)
-    :return: 필터링된 DataFrame
-    """
-    # 📌 rt_data를 DataFrame으로 변환
-    df_rt = pd.DataFrame(data)
-
-    # 📌 필요한 컬럼만 선택 후 컬럼명 변경
-    df_rt_filtered = df_rt[["xymd", "xhms", "open", "high", "low", "last", "evol", "eamt"]].rename(
-        columns={
-            "xymd": "date",
-            "xhms": "time",
-            "last": "close",
-            "evol": "volume",
-        }
+# 🔹 DB 연결 함수
+def connect_db():
+    return pymysql.connect(
+        host=config["host"],
+        user=config["user"],
+        password=config["password"],
+        database="usa_stock",
+        port=config["port"],
+        charset="utf8mb4",
+        autocommit=True
     )
 
-    # 📌 date와 time을 YYYY-MM-DD HH:MM 형태로 변환하여 time 컬럼에 저장
-    df_rt_filtered["time"] = (
-        df_rt_filtered["date"].astype(str).str[:4] + "-" +  # YYYY
-        df_rt_filtered["date"].astype(str).str[4:6] + "-" +  # MM
-        df_rt_filtered["date"].astype(str).str[6:] + " " +   # DD
-        df_rt_filtered["time"].astype(str).str.zfill(6).str[:2] + ":" +  # HH
-        df_rt_filtered["time"].astype(str).str.zfill(6).str[2:4]  # MM
+# 🔹 뉴욕 시간 설정
+NYT = timezone("America/New_York")
+
+# 🔹 데이터 리샘플링 간격 설정 (e.g. '15min', '5min', '1min')
+RESAMPLE_INTERVAL = '15min'
+
+# 🔹 API로부터 데이터 받아오기
+def get_minute_data(cnt, to=None):
+    df = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
+        div="02", excd="AMS", itm_no="SOXL", nmin='1', pinc="0", nrec=str(cnt), keyb=to
     )
+    if df.empty:
+        return pd.DataFrame()
+    df = df.rename(columns={"xymd":"date", "xhms":"time", "last":"close", "evol":"volume"})
+    df['datetime'] = pd.to_datetime(df['date'] + df['time'].str.zfill(6), format='%Y%m%d%H%M%S')
+    return df[['datetime', 'open', 'high', 'low', 'close', 'volume']].sort_values('datetime')
 
-    # 📌 date 컬럼 삭제
-    df_rt_filtered = df_rt_filtered.drop(columns=["date"])
-
-    # 📌 volume과 eamt 컬럼을 숫자형으로 변환 (합계 계산을 위해)
-    df_rt_filtered["volume"] = pd.to_numeric(df_rt_filtered["volume"], errors='coerce')
-    df_rt_filtered["eamt"] = pd.to_numeric(df_rt_filtered["eamt"], errors='coerce')
-
-    return df_rt_filtered
-
-
-def min_data(min_interval, min = False):
-    """
-    1분 단위의 데이터를 가져오는 함수.
-    """
-    if min:
-        rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                    div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1",
-                    nrec='1'
-                )
-    elif min == False:
-        rt_data = test_api.get_overseas_price_quot_inquire_time_itemchartprice(
-                    div="02", excd="AMS", itm_no="SOXL", nmin=min_interval, pinc="1"
-                )
-    df = data_formatting(rt_data)
-    return df
-
-
-def min_massdata(min_interval, cnt):
-    """
-    다량의 1분 데이터를 한번에 받아오는 함수.
-    """
+# 🔹 다량의 데이터를 한번에 가져오는 함수 (최대 2400개)
+def min_massdata(min_interval='1', cnt=20):
     formatted_time = ""
-    df_combined = pd.DataFrame()  # 데이터를 누적 저장할 빈 DataFrame 생성
+    df_combined = pd.DataFrame()
 
     for i in range(cnt):
         if i == 0:
@@ -143,184 +62,162 @@ def min_massdata(min_interval, cnt):
                 pinc="1", next_value="1", keyb=formatted_time
             )
 
-        df = data_formatting(rt_data)  # API에서 받아온 데이터 정리
+        df = rt_data.rename(columns={"xymd":"date", "xhms":"time", "last":"close", "evol":"volume"})
+        df['datetime'] = pd.to_datetime(df['date'] + df['time'].str.zfill(6), format='%Y%m%d%H%M%S')
+        df = df[['datetime', 'open', 'high', 'low', 'close', 'volume']].sort_values('datetime')
 
-        if df.empty:  # 데이터가 비어 있으면 중단
-            print("No more data available.")
+        if df.empty:
+            print("❌ 더 이상 가져올 데이터가 없습니다.")
             break
 
-        last_time = df.iloc[-1]['time']  # 마지막 인덱스의 time 값
-        formatted_time = pd.to_datetime(last_time).strftime('%Y%m%d%H%M%S')
+        formatted_time = df.iloc[0]['datetime'].strftime('%Y%m%d%H%M%S')
 
         # 기존 데이터와 새로운 데이터 합치기
-        df_combined = pd.concat([df_combined, df]).drop_duplicates(subset='time')
+        df_combined = pd.concat([df_combined, df]).drop_duplicates(subset='datetime')
         time.sleep(0.5)
-    return df_combined  # 누적된 데이터를 반환
+
+    return df_combined
 
 
-def aggregate_rolling(df, agg_minutes, start_time=None):
-    """
-    1분 데이터(DataFrame)를 받아, 주어진 agg_minutes 간격(예: 15, 30, 60분)으로 집계합니다.
-    집계 기준은 start_time부터의 시간 차이를 이용합니다.
-    
-    Parameters:
-        df (DataFrame): 'time', 'open', 'high', 'low', 'close', 'volume', 'eamt' 컬럼을 가진 데이터.
-        agg_minutes (int): 집계 간격 (분 단위).
-        start_time (datetime, optional): 집계의 기준 시작 시간. 지정하지 않으면 df의 첫 시간 사용.
-        
-    Returns:
-        DataFrame: 집계된 데이터
-    """
-    # time 컬럼을 datetime 타입으로 변환 후 정렬
-    df['time'] = pd.to_datetime(df['time'])
-    df = df.sort_values('time')
-    
-    if start_time is None:
-        start_time = df['time'].iloc[0]
-        
-    # 기준 시각으로부터 각 데이터의 시간 차이를 분 단위로 계산
-    df['diff_minutes'] = (df['time'] - start_time).dt.total_seconds() / 60
-    # 주어진 agg_minutes 간격으로 그룹 인덱스 생성 (예: 0~14분: 그룹 0, 15~29분: 그룹 1, ...)
-    df['group'] = (df['diff_minutes'] // agg_minutes).astype(int)
-    
-    # 집계: open은 그룹 내 첫값, high는 최대, low는 최소, close는 마지막, volume과 eamt는 합계
-    agg_dict = {
-        'open': 'first',
-        'high': 'max',
-        'low': 'min',
-        'close': 'last',
-        'volume': 'sum',
-        'eamt': 'sum'
-    }
-    grouped = df.groupby('group').agg(agg_dict).reset_index()
-    
-    # 각 그룹의 대표 시간은 start_time + (그룹 인덱스 * agg_minutes) 분으로 설정
-    grouped['time'] = grouped['group'].apply(lambda x: start_time + pd.Timedelta(minutes=x * agg_minutes))
-    
-    # 최종적으로 필요한 컬럼 순서 지정
-    grouped = grouped[['time', 'open', 'high', 'low', 'close', 'volume', 'eamt']]
-    grouped = grouped.sort_values('time').reset_index(drop=True)
-    
-    return grouped
-
-
-def run_mode(mode):
-    """
-    선택한 실행 모드에 따라 작업을 수행.
-    
-    :param mode: 실행 모드 (1: 실제 매매, 2: 모의투자, 3: 전략 개발)
-    """
-    global global_minute_data, global_start_time  # 전역 변수 사용
-
+# 🔹 DB에 데이터 저장
+def save_to_db(df):
+    conn = connect_db()
     try:
-        if mode == '1':
-            print("🟢 실제 매매 모드 (R) 실행")
-            # TODO: 실제 매매 관련 코드 추가
-            
-        elif mode == '2':
-            print("🟡 모의투자 모드 (V) 실행")
-            svr = 'vps'
-            ka.auth(svr)
-            
-            # 1️⃣ 초기 실행: 다량의 1분 데이터를 받아옴
-            min_interval = '1'  # 1분 데이터
-            cnt = 10
-            print("초기 1분 데이터 수집 중 (min_massdata)...")
-            global_minute_data = min_massdata(min_interval, cnt)
-            
-            if global_minute_data.empty:
-                print("⚠️ 초기 데이터 수집 실패")
-                return
-            
-            global_minute_data['time'] = pd.to_datetime(global_minute_data['time'])
-            global_start_time = global_minute_data.iloc[0]['time']
-            
-            agg_minutes = 15  # 집계 간격 설정
-            
-            aggregated_data = aggregate_rolling(global_minute_data, agg_minutes, start_time=global_start_time)
-            aggregated_data.to_csv("aggregated_data.csv", index=False)
-            print("초기 집계 데이터 저장 완료 (aggregated_data.csv)")
-            df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False, show_volume=False)
-
-            now = datetime.now(timezone('America/New_York'))
-            last_minute = df.iloc[-1].name.minute if not df.empty else None
-            buy_signal = df['buy_signal'].iloc[-1] if not df.empty else False
-            current_minute = now.minute
-                
-            execution_flag = (last_minute == current_minute and buy_signal)
-            
-            rt_data = test_api.get_overseas_inquire_present_balance(svr='vps')
-
-            if execution_flag:
-                send_message("매수신호 발생")
-
-            # 2️⃣ 매분 3초마다 실행
-            while True:
-                now = datetime.now(timezone('America/New_York'))
-                second = now.second
-                buy_signal = False
-
-                if second == 3:
-                    print(f"[{now.strftime('%H:%M:%S')}] 새로운 1분 데이터 수집 중 (min_data)...")
-                    new_data = min_data(min_interval, min=True)
-                    if new_data.empty:
-                        print("새로운 데이터가 없습니다. 다음 주기로 넘어갑니다.")
-                        continue
-
-                    new_data['time'] = pd.to_datetime(new_data['time'])
-                    global_minute_data = pd.concat([global_minute_data, new_data]).drop_duplicates(subset='time').sort_values('time')
-                    
-                    aggregated_data = aggregate_rolling(global_minute_data, agg_minutes, start_time=global_start_time)
-                    aggregated_data.to_csv("aggregated_data.csv", index=False)
-                    print("집계 데이터 업데이트 완료:")
-                    df = test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=False, show_volume=False)
-                    print("차트 분석 완료")
-                
-                time.sleep(0.5)  # 0.5초마다 체크하여 정확한 타이밍 유지
-
-        elif mode == '3':
-            print("🔵 전략 개발 모드 (T) 실행")
-            ka.auth(svr='vps')  # 한투 API 인증
-
-            # 해외 주식 분봉 데이터 조회 (SOXL, 분봉)
-            min_interval = '15'
-            cnt = 3
-            df = min_data(min_interval)
-
-            #df = min_massdata(min_interval, cnt)
-
-            df.to_csv("data.csv", index=False)
-            df = test_s.plot_candlestick(df, show_rsi=False, show_macd=True, show_bollinger=False, show_volume = True)  #MA #RSI #MACD #BB #CCI 
-            #rt_data = test_api.get_overseas_price_quot_inquire_daily_chartprice(
-            #    div="N", itm_no="AAPL", inqr_strt_dt="20250101", inqr_end_dt="", period="D"
-            #)
-
-            # 📊 원본 데이터 출력
-            #print("📊 해외 주식 데이터 조회 결과:")
-            # 📂 CSV 파일로 저장
-                
-        else:
-            print("❌ 유효하지 않은 모드입니다.")
-            
+        with conn.cursor() as cursor:
+            for idx, row in df.iterrows():
+                sql = """
+                INSERT INTO SOXL_minute_data (time, open, high, low, close, volume)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume);
+                """
+                cursor.execute(sql, (
+                    row['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
+                    row['open'], row['high'], row['low'], row['close'], row['volume']
+                ))
+            print(f"✅ {len(df)}건 데이터 DB 저장 완료")
     except Exception as e:
-        print(f"⚠️ 실행 중 오류 발생: {e}")
+        print("❌ DB 저장 오류:", e)
+    finally:
+        conn.close()
 
+# 🔹 DISCORD 알림 메시지 발송 로직 사용
+def send_message(message):
+    url = config['DISCORD_WEBHOOK_URL']
+    data = {"content": message}
+    response = requests.post(url, json=data)
+    if response.status_code == 204:
+        print(f"📢 DISCORD 메시지 전송 완료: {message}")
+    else:
+        print(f"❌ DISCORD 메시지 전송 실패: {response.status_code}, {response.text}")
 
-def main():
-    """
-    사용자 입력을 받아 실행할 모드를 결정.
-    """
-    valid_modes = {"1", "2", "3"}
-    
+# 🔹 실제 주문 로직 깡통
+def execute_trade(signal):
+    send_message(f"{signal} 신호 발생! 실제 주문 로직을 구현해주세요.")
+
+# 🔹 데이터 분석
+def data_analysis():
+    conn = connect_db()
+    try:
+        df = pd.read_sql("SELECT * FROM SOXL_minute_data ORDER BY time DESC LIMIT 1500", conn)
+        if not df.empty:
+            df['time'] = pd.to_datetime(df['time'])
+            df = df.sort_values('time')
+
+            aggregated_data = df.resample(RESAMPLE_INTERVAL, on='time').agg({
+                'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+            }).dropna().reset_index()
+
+            test_s.plot_candlestick(aggregated_data, show_rsi=False, show_macd=True, show_bollinger=True, show_volume=False)
+
+    except Exception as e:
+        print("❌ 분석 오류:", e)
+    finally:
+        conn.close()
+
+# 🔹 마지막 저장 시간 조회
+def get_last_time():
+    conn = connect_db()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT time FROM SOXL_minute_data ORDER BY time DESC LIMIT 1")
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+    except Exception as e:
+        print("❌ DB 조회 오류:", e)
+    finally:
+        conn.close()
+    return None
+
+# 🔹 누락 데이터 채우기 (개선 버전)
+def fill_missing_data():
     while True:
-        mode = input("👉 실행할 모드를 선택하세요 (1: 실제 매매, 2: 모의투자, 3: 전략 개발): ").strip()
-        
-        if mode in valid_modes:
-            run_mode(mode)
-            break  # 정상적인 입력 시 루프 종료
-        else:
-            print("⚠️ 올바른 값을 입력하세요. (1, 2, 3)")
+        last_time = get_last_time()
+        now = datetime.now(NYT).replace(second=0, microsecond=0)
 
+        if last_time is None:
+            print("📌 DB 비어있음, 2400개 데이터 로딩 시작")
+            df = min_massdata('1', cnt=20)
+        else:
+            last_time = NYT.localize(pd.to_datetime(last_time))
+            missing_minutes = int((now - last_time).total_seconds() // 60)
+
+            if missing_minutes <= 0:
+                print("📌 더 이상 누락된 데이터가 없습니다.")
+                break  # 반복 종료
+            else:
+                print(f"📌 {missing_minutes}분 데이터 누락, 보완 로딩 시작")
+                df = get_minute_data(min(missing_minutes, 200))  # 최대 200개씩 점진적으로 보완
+
+        if df.empty:
+            print("❌ 조회된 추가 데이터가 없습니다.")
+            break
+
+        save_to_db(df)
+        time.sleep(1)  # API 호출 제한 방지
+
+    print("✅ 모든 누락 데이터가 성공적으로 채워졌습니다.")
+
+# 🔹 데이터 수집 스레드
+def data_collection_thread():
+    while True:
+        now = datetime.now(NYT)
+        if dt_time(9, 20) <= now.time() < dt_time(16, 0):
+            if now.second == 3:
+                df = get_minute_data(1)
+                if not df.empty:
+                    save_to_db(df)
+                time.sleep(1)
+            time.sleep(0.5)
+        else:
+            time.sleep(60)
+
+# 🔹 데이터 분석 스레드
+def data_analysis_thread():
+    while True:
+        now = datetime.now(NYT)
+        if dt_time(9, 30) <= now.time() <= dt_time(16, 0):
+            data_analysis()
+        time.sleep(60)
+
+# 🔹 모드별 실행
+def run_mode(mode):
+    svr = 'my_prod' if mode == 1 else 'vps'
+    ka.auth(svr)
+
+    fill_missing_data()
+
+    if mode in [1, 2]:
+        threading.Thread(target=data_collection_thread, daemon=True).start()
+        threading.Thread(target=data_analysis_thread, daemon=True).start()
+        while True:
+            time.sleep(1)
+
+    elif mode == 3:
+        print("🧪 모드 3: 전략 개발 및 테스트 모드 실행")
+        data_analysis()
 
 if __name__ == "__main__":
-    main()
+    mode = 2
+    run_mode(mode)

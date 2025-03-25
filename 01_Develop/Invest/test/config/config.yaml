@@ -19,3 +19,9 @@ paper_url: "https://openapivts.koreainvestment.com:29443"
 DISCORD_WEBHOOK_URL: "https://discordapp.com/api/webhooks/1326693598577557504/hmiYO3Ohjm2KvqcaJ2VGxOCldw55igGw8Jt87JhehQk3G8H6cDVCYy9jic711xTRjXu9"
 
 my_agent : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+
+#maria DB
+host: "172.30.1.26"
+user: "juhyun"
+password: "@Yjh319059"
+port: 3306

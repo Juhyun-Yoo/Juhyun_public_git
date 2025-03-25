@@ -5,17 +5,99 @@ from datetime import datetime, timedelta
 from pandas import DataFrame
 import mojito
 
-def get_balance():
-    broker = mojito.KoreaInvestment(
-        api_key=kis.getTREnv().my_app,
-        api_secret=kis.getTREnv().my_sec,
-        acc_no=kis.getTREnv().my_acct+'-'+kis.getTREnv().my_prod,
-        exchange='아멕스',
-        mock=True
-    )
-    balance = broker.fetch_present_balance()
+##############################################################################################
+# [해외주식] 주문/계좌 > 해외주식 주문[v1_해외주식-001]
+#
+# * 모의투자의 경우, 모든 해외 종목 매매가 지원되지 않습니다. 일부 종목만 매매 가능한 점 유의 부탁드립니다.
+#
+# * 해외주식 서비스 신청 후 이용 가능합니다. (아래 링크 3번 해외증권 거래신청 참고)
+# https://securities.koreainvestment.com/main/bond/research/_static/TF03ca010001.jsp
+#
+# * 해외 거래소 운영시간 외 API 호출 시 애러가 발생하오니 운영시간을 확인해주세요.
+# * 해외 거래소 운영시간(한국시간 기준)
+# 1) 미국 : 23:30 ~ 06:00 (썸머타임 적용 시 22:30 ~ 05:00)
+# 2) 일본 : (오전) 09:00 ~ 11:30, (오후) 12:30 ~ 15:00
+# 3) 상해 : 10:30 ~ 16:00
+# 4) 홍콩 : (오전) 10:30 ~ 13:00, (오후) 14:00 ~ 17:00
+#
+# ※ POST API의 경우 BODY값의 key값들을 대문자로 작성하셔야 합니다.
+#    (EX. "CANO" : "12345678", "ACNT_PRDT_CD": "01",...)
+#
+# ※ 종목코드 마스터파일 파이썬 정제코드는 한국투자증권 Github 참고 부탁드립니다.
+#    https://github.com/koreainvestment/open-trading-api/tree/main/stocks_info
+##############################################################################################
+# Input: None (Option) 상세 Input값 변경이 필요한 경우 API문서 참조
+# Output: DataFrame (Option) output API 문서 참조 등
+def get_overseas_order(svr, ord_dv="", excg_cd="", itm_no="", qty=0, unpr=0, tr_cont="", FK100="", NK100="", dataframe=None):  # 국내주식주문 > 주식주문(현금)
+    url = '/uapi/overseas-stock/v1/trading/order'
 
-    return balance
+    if ord_dv == "buy":
+        if excg_cd in ("NASD","NYSE","AMEX"):
+            if svr == 'vps':
+                tr_id = "VTTT1002U"
+            elif svr == 'my_prod':
+                tr_id = "TTTT1002U"  # 미국 매수 주문 [모의투자] VTTT1002U
+        else:
+            print("해외거래소코드 확인요망!!!")
+            return None
+        
+    elif ord_dv == "sell":
+        if excg_cd in ("NASD", "NYSE", "AMEX"):
+            if svr == 'vps':
+                tr_id = "VTTT1006U"
+            elif svr == 'my_prod':
+                tr_id = "TTTT1006U"  # 미국 매도 주문 [모의투자] VTTT1006U
+        else:
+            print("해외거래소코드 확인요망!!!")
+            return None
+    else:
+        print("매수/매도 구분 확인요망!")
+        return None
+
+    if itm_no == "":
+        print("주문종목번호(상품번호) 확인요망!!!")
+        return None
+
+    if qty == 0:
+        print("주문수량 확인요망!!!")
+        return None
+
+    if unpr == 0:
+        print("해외주문단가 확인요망!!!")
+        return None
+
+    if ord_dv == "buy":
+        sll_type = ""
+    elif ord_dv == "sell":
+        sll_type = "00"
+    else:
+        print("매수/매도 구분 확인요망!!!")
+        return None
+
+    params = {
+        "CANO": kis.getTREnv().my_acct,         # 종합계좌번호 8자리
+        "ACNT_PRDT_CD": kis.getTREnv().my_prod, # 계좌상품코드 2자리
+        "OVRS_EXCG_CD": excg_cd,                # 해외거래소코드
+                                                # NASD:나스닥,NYSE:뉴욕,AMEX:아멕스,SEHK:홍콩,SHAA:중국상해,SZAA:중국심천,TKSE:일본,HASE:베트남하노이,VNSE:호치민
+        "PDNO": itm_no,                         # 종목코드
+        "ORD_DVSN": "00",                       # 주문구분 00:지정가, 01:시장가, 02:조건부지정가  나머지주문구분 API 문서 참조
+        "ORD_QTY": str(int(qty)),               # 주문주식수
+        "OVRS_ORD_UNPR": str(int(unpr)),        # 해외주문단가
+        "SLL_TYPE": sll_type,                   # 판매유형
+        "ORD_SVR_DVSN_CD": "0"                  # 주문서버구분코드l
+    }
+
+    res = kis._url_fetch(url, tr_id, tr_cont, params, postFlag=True)
+    if str(res.getBody().rt_cd) == "0":
+        current_data = pd.DataFrame(res.getBody().output, index=[0])
+        dataframe = current_data
+    else:
+        print(res.getBody().msg_cd + "," + res.getBody().msg1)
+        #print(res.getErrorCode() + "," + res.getErrorMessage())
+        dataframe = None
+
+    return dataframe
+
 ##############################################################################################
 # [해외주식] 주문/계좌 > 해외주식 체결기준현재잔고[v1_해외주식-008]
 # 해외주식 잔고를 체결 기준으로 확인하는 API 입니다.
