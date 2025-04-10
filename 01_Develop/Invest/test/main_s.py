@@ -9,7 +9,7 @@ def is_regular_trading_hours(time):
     ny_time = time.tz_convert('America/New_York')
     return ny_time.time() >= pd.Timestamp("09:30").time() and ny_time.time() <= pd.Timestamp("16:00").time()
 
-def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, show_volume=True):
+def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, show_volume=True, show_hedging_band=True, mode=3):
     df['time'] = pd.to_datetime(df['time'])
     df = df.sort_values(by='time')
     df.set_index('time', inplace=True)
@@ -18,7 +18,7 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
     
     df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
     df = df[['open', 'high', 'low', 'close', 'volume']]
-    df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+    df.columns = ['open', 'high', 'low', 'close', 'volume']
 
     df['buy_signal'] = False
     df['sell_signal'] = False
@@ -28,23 +28,23 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
     first_buy_signal_occurred = False
     last_trading_time = pd.Timestamp("15:50", tz="America/New_York").time()
 
-    apds = [mpf.make_addplot(df['Close'], color='black', linestyle='solid', width=1.2, label="Close Price")]
+    apds = [mpf.make_addplot(df['close'], color='black', linestyle='solid', width=1.2, label="close Price")]
 
     # ✅ 거래량 기반 전략 추가 (OBV + 거래량 스파이크 감지)
     if show_volume:
-        df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
-        df['Volume Spike'] = df['Volume'] > df['Volume'].rolling(window=20).mean() * 1.5  # ✅ 평균 대비 1.5배 이상 증가 시 스파이크
+        df['OBV'] = (np.sign(df['close'].diff()) * df['volume']).fillna(0).cumsum()
+        df['volume Spike'] = df['volume'] > df['volume'].rolling(window=20).mean() * 1.5  # ✅ 평균 대비 1.5배 이상 증가 시 스파이크
         
         apds.append(mpf.make_addplot(df['OBV'], panel=2, color='brown', width=0.8, ylabel="OBV"))
         
     if show_macd:
-        short_ema = df['Close'].ewm(span=12, adjust=False).mean()
-        long_ema = df['Close'].ewm(span=26, adjust=False).mean()
+        short_ema = df['close'].ewm(span=12, adjust=False).mean()
+        long_ema = df['close'].ewm(span=26, adjust=False).mean()
         df['MACD'] = short_ema - long_ema
         df['Signal'] = df['MACD'].ewm(span=3, adjust=False).mean()
         
         for i in range(1, len(df)):
-            current_price = df['Close'].iloc[i]
+            current_price = df['close'].iloc[i]
             current_time = df.index[i]
 
             if not is_regular_trading_hours(current_time):
@@ -78,7 +78,7 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
         ])
     
     if show_rsi:
-        delta = df['Close'].diff()
+        delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
@@ -93,30 +93,57 @@ def plot_candlestick(df, show_rsi=True, show_macd=True, show_bollinger=True, sho
         apds.append(mpf.make_addplot(df['RSI'], panel=1, color='blue', width=0.8, ylabel='RSI'))
     
     if show_bollinger:
-        df['MA20'] = df['Close'].rolling(window=20).mean()
-        df['UpperBB'] = df['MA20'] + (df['Close'].rolling(window=20).std() * 2)
-        df['LowerBB'] = df['MA20'] - (df['Close'].rolling(window=20).std() * 2)
+        df['MA20'] = df['close'].rolling(window=20).mean()
+        df['UpperBB'] = df['MA20'] + (df['close'].rolling(window=20).std() * 2)
+        df['lowerBB'] = df['MA20'] - (df['close'].rolling(window=20).std() * 2)
         
         apds.extend([
             mpf.make_addplot(df['UpperBB'], color='red', linestyle='dashed', width=1, label='Upper BB'),
-            mpf.make_addplot(df['LowerBB'], color='blue', linestyle='dashed', width=1, label='Lower BB')
+            mpf.make_addplot(df['lowerBB'], color='blue', linestyle='dashed', width=1, label='lower BB')
+        ])
+
+    if show_hedging_band:
+        kc_ema = df['close'].ewm(span=21, adjust=False).mean()
+        kc_atr = (df['high'] - df['low']).rolling(window=14).mean()
+        kc_upper = kc_ema + 2 * kc_atr
+        kc_lower = kc_ema - 2 * kc_atr
+
+        bb_sma = df['close'].rolling(window=21).mean()
+        bb_std = df['close'].rolling(window=21).std()
+        bb_upper = bb_sma + 2 * bb_std
+        bb_lower = bb_sma - 2 * bb_std
+
+        dc_upper = df['high'].rolling(window=21).max()
+        dc_lower = df['low'].rolling(window=21).min()
+
+        upper_band = pd.concat([kc_upper, bb_upper, dc_upper], axis=1).max(axis=1)
+        lower_band = pd.concat([kc_lower, bb_lower, dc_lower], axis=1).min(axis=1)
+        center_line = (kc_ema + bb_sma + (dc_upper + dc_lower) / 2) / 3
+
+        apds.extend([
+            mpf.make_addplot(upper_band, color='red', linestyle='--', width=1.2, label="Hedging Upper"),
+            mpf.make_addplot(lower_band, color='red', linestyle='--', width=1.2, label="Hedging lower"),
+            mpf.make_addplot(center_line, color='blue', width=1.4, label="Hedging Center")
         ])
     
-    df['buy_marker'] = np.where(df['buy_signal'], df['Close'], np.nan)
-    df['sell_marker'] = np.where(df['sell_signal'], df['Close'], np.nan)
+    df['buy_marker'] = np.where(df['buy_signal'], df['close'], np.nan)
+    df['sell_marker'] = np.where(df['sell_signal'], df['close'], np.nan)
+    
+    if mode == 3:
+        apds.append(mpf.make_addplot(df['buy_marker'], scatter=True, marker='^', color='green', markersize=100, label="Buy Signal"))
+        apds.append(mpf.make_addplot(df['sell_marker'], scatter=True, marker='v', color='red', markersize=100, label="Sell Signal"))
 
-    apds.append(mpf.make_addplot(df['buy_marker'], scatter=True, marker='^', color='green', markersize=100, label="Buy Signal"))
-    apds.append(mpf.make_addplot(df['sell_marker'], scatter=True, marker='v', color='red', markersize=100, label="Sell Signal"))
+        fig, axes = mpf.plot(df, type='candle', volume=True, style='charles', 
+                            title='Candle chart & MACD/RSI/Bollinger signals',
+                            ylabel='Price', ylabel_lower='volume', addplot=apds,
+                            figsize=(14, 8), returnfig=True)
 
-    fig, axes = mpf.plot(df, type='candle', volume=True, style='charles', 
-                         title='Candle chart & MACD/RSI/Bollinger signals',
-                         ylabel='Price', ylabel_lower='Volume', addplot=apds,
-                         figsize=(14, 8), returnfig=True)
+        ax_price = axes[0]
+        handles, labels = ax_price.get_legend_handles_labels()
+        ax_price.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.1, 1), fontsize=10)
 
-    ax_price = axes[0]
-    handles, labels = ax_price.get_legend_handles_labels()
-    ax_price.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.1, 1), fontsize=10)
-
-    plt.show()
+        plt.show()
+    else:
+        None
     
     return df
