@@ -182,9 +182,9 @@ def get_overseas_inquire_present_balance(svr, dv="03", dvsn="01", natn="000", mk
 def get_overseas_inquire_psamount(svr, dv="03", dvsn="01", natn="000", mkt="00", inqr_dvsn="00", tr_cont="", FK100="", NK100="", dataframe=None):
     url = '/uapi/overseas-stock/v1/trading/inquire-psamount'
     if svr == 'vps':
-        tr_id = "VTTS3007R"
+        tr_id = "VTTT1002U"
     elif svr == 'my_prod':
-        tr_id = "TTTS3007R"   # 모의투자 VTTS3007R
+        tr_id = "JTTT1006U"   # 모의투자 VTTS3007R
 
     t_cnt = 0
 
@@ -207,6 +207,47 @@ def get_overseas_inquire_psamount(svr, dv="03", dvsn="01", natn="000", mkt="00",
         dataframe = None
 
     return dataframe
+
+##############################################################################################
+# [해외주식] 기본시세 > 해외주식 현재가상세
+# 개요
+# 해외주식 현재가상세 API입니다.
+# 해당 API를 활용하여 해외주식 종목의 매매단위(vnit), 호가단위(e_hogau), PER, PBR, EPS, BPS 등의 데이터를 확인하실 수 있습니다.
+# 해외주식 시세는 무료시세(지연시세)만이 제공되며, API로는 유료시세(실시간시세)를 받아보실 수 없습니다.
+# ※ 지연시세 지연시간 : 미국 - 실시간무료(0분지연) / 홍콩, 베트남, 중국 - 15분지연 / 일본 - 20분지연
+#    미국의 경우 0분지연시세로 제공되나, 장중 당일 시가는 상이할 수 있으며, 익일 정정 표시됩니다.
+# ※ 추후 HTS(efriend Plus) [7781] 시세신청(실시간) 화면에서 유료 서비스 신청 시 실시간 시세 수신할 수 있도록 변경 예정
+# [미국주식시세 이용시 유의사항]
+# ■ 무료 실시간 시세(0분 지연) 제공
+# ※ 무료(매수/매도 각 10호가) : 나스닥 마켓센터에서 거래되는 호가 및 호가 잔량 정보
+# ■ 무료 실시간 시세 서비스는 유료 실시간 시세 서비스 대비 평균 50% 수준에 해당하는 정보이므로
+# 현재가/호가/순간체결량/차트 등에서 일시적·부분적 차이가 있을 수 있습니다.
+# ■ 무료∙유료 모두 미국에 상장된 종목(뉴욕, 나스닥, 아멕스 등)의 시세를 제공하며, 동일한 시스템을 사용하여 주문∙체결됩니다.
+# 단, 무료∙유료의 기반 데이터 차이로 호가 및 체결 데이터는 차이가 발생할 수 있고, 이로 인해 발생하는 손실에 대해서 당사가 책임지지 않습니다.
+# ■ 무료 실시간 시세 서비스의 시가, 저가, 고가, 종가는 유료 실시간 시세 서비스와 다를 수 있으며,
+# 종목별 과거 데이터(거래량, 시가, 종가, 고가, 차트 데이터 등)는 장 종료 후(오후 12시경) 유료 실시간 시세 서비스 데이터와 동일하게 업데이트됩니다.
+# (출처: 한국투자증권 외화증권 거래설명서 - https://www.truefriend.com/main/customer/guide/Guide.jsp?&cmd=TF04ag010002¤tPage=1&num=64)
+##############################################################################################
+# 해외주식 현재가상세 시세 Object를 DataFrame 으로 반환
+# Input: None (Option) 상세 Input값 변경이 필요한 경우 API문서 참조
+# Output: DataFrame (Option) output
+def get_overseas_price_quot_price_detail(excd="", itm_no="", tr_cont="", dataframe=None):
+    url = '/uapi/overseas-price/v1/quotations/price-detail'
+    tr_id = "HHDFS76200200" # 해외주식 현재가상세
+
+    params = {
+        "AUTH": "",         # 시장 분류 코드 	J : 주식/ETF/ETN, W: ELW
+        "EXCD": excd,       # 	종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)
+        "SYMB": itm_no      # 종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)
+    }
+    res = kis._url_fetch(url, tr_id, tr_cont, params)
+
+    # Assuming 'output' is a dictionary that you want to convert to a DataFrame
+    current_data = pd.DataFrame(res.getBody().output, index=[0])  # getBody() kis_auth.py 존재
+    last_price = float(res.getBody().output['last']) 
+    dataframe = current_data
+
+    return last_price
 
 ##############################################################################################
 # [해외주식] 주문/계좌 > 해외주식 잔고_현황 [v1_해외주식-006]

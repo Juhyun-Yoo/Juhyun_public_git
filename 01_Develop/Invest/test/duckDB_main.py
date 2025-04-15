@@ -213,6 +213,9 @@ def data_analysis_improved(mode, resample_interval=15, limit=2400, raw_limit=240
                 'volume': 'sum'
             }).dropna().reset_index()
 
+            if mode == 3:
+                df_resampled.to_csv('data.csv')
+
             df_resampled = main_s.plot_candlestick(
                 df_resampled.rename(columns={'interval_start':'time'}),
                 show_rsi=False, show_macd=True,
@@ -266,9 +269,17 @@ def calculate_trading_signal(df):
 def execute_trade(signal):
     if signal:
         main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
+        last_price = main_api.get_overseas_price_quot_price_detail(excd="AMS", itm_no="SOXL")
         print(f"🚨 {signal} 신호 발생! 실제 거래 로직을 구현해주세요.")
-        send_message(f"🚨 {signal} 신호 발생! 실제 거래 로직을 구현해주세요.")
-    main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
+        send_message(f"🚨 현재가 {last_price} 신호 발생! 실제 거래 로직을 구현해주세요.")
+
+        #잔고조회
+        main_api.get_overseas_inquire_present_balance(svr='vps', dv="03", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
+
+        #구매로직
+        main_api.get_overseas_order(svr='vps',ord_dv="buy", excg_cd="AMEX", itm_no="SOXL", qty=1, unpr=1)
+
+    
     print('매매 신호가 없습니다.')
 
 # 정규장 수집 루프
@@ -329,8 +340,9 @@ def run_mode(mode):
     elif mode == 3:
         fill_missing_data()
         print("🧪 모드 3: 전략 개발 및 테스트 모드 실행")
-        a = main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
         data_analysis_improved(mode, resample_interval=RESAMPLE_INTERVAL)
+        
+        
 
 if __name__ == "__main__":
     mode = 3

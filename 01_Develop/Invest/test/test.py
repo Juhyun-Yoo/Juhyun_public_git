@@ -21,3 +21,18 @@ broker = mojito.KoreaInvestment(
 
 balance = broker.fetch_present_balance()
 pprint.pprint(balance)
+
+broker = mojito.KoreaInvestment(
+    api_key=key,
+    api_secret=secret,
+    acc_no=acc_no,
+    exchange='아멕스',
+    mock = True
+)
+
+resp = broker.create_limit_buy_order(
+    symbol="SOXL",
+    price=30,
+    quantity=5
+)
+pprint.pprint(resp)
