@@ -156,11 +156,11 @@ def get_last_time():
     finally:
         con.close()
 
-# 누락 데이터 보완
 def fill_missing_data():
     while True:
         last_time = get_last_time()
         now = datetime.now(NYT).replace(second=0, microsecond=0)
+        print(f"📌 [디버그] DB 기준 마지막 저장 시각: {last_time}")
 
         if last_time is None:
             print("📌 DB 비어있음, 데이터 로딩 시작")
@@ -173,9 +173,12 @@ def fill_missing_data():
                 print("📌 누락 데이터 없음")
                 break
             else:
-                print(f"📌 {missing_minutes}분 누락 → 보완 시작")
+                print(f"📌 {missing_minutes}분 필요 → 보완 시작")
                 df = fetch_missing_data(missing_minutes)
+                print(f"📌 [디버그] fetch_missing_data() 수집된 총 데이터 수: {len(df)}")
+
                 df = df[df['datetime'] > last_time]
+                print(f"📌 [디버그] last_time 이후 데이터 수: {len(df)}")
 
         if df.empty:
             print("📌 추가 데이터 없음")
@@ -183,6 +186,7 @@ def fill_missing_data():
 
         save_to_db(df)
         time.sleep(1)
+
 
 # 개선된 데이터 분석 로직
 def data_analysis_improved(mode, resample_interval=15, limit=2400, raw_limit=2400):
@@ -263,8 +267,9 @@ def execute_trade(signal):
     if signal:
         main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
         print(f"🚨 {signal} 신호 발생! 실제 거래 로직을 구현해주세요.")
+        send_message(f"🚨 {signal} 신호 발생! 실제 거래 로직을 구현해주세요.")
     main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
-    print('A')
+    print('매매 신호가 없습니다.')
 
 # 정규장 수집 루프
 def data_collection_thread(mode):
@@ -272,31 +277,33 @@ def data_collection_thread(mode):
     market_open_sent = False
     market_close_sent = False
     preopen_sent = False
+    svr = 'my_prod' if mode == 1 else 'vps'  # 서버 정보 기억
 
     while True:
         now = datetime.now(NYT)
+        # 🔁 매 루프마다 토큰 유효성 체크
+
         if dt_time(9, 20) <= now.time() < dt_time(9, 29):
             if not preopen_sent:
-                send_message("🟢 정규장이 시작 10분 전입니다. 모니터링을 시작합니다.")
+                try:
+                    send_message("🟢 정규장이 시작 10분 전입니다. 모니터링을 시작합니다.")
+                    ka.auth(svr)
+                except:
+                    send_message("토큰 갱신에 실패 했습니다. 확인 바랍니다.")
                 fill_missing_data()
                 preopen_sent = True
 
             fill_missing_data()
-            df = get_minute_data(1)
-            if not df.empty:
-                save_to_db(df)
 
         if dt_time(9, 30) <= now.time() < dt_time(16, 0):
             if not market_open_sent:
                 send_message("🟢 정규장이 시작되었습니다.")
+                main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
                 market_open_sent = True
                 market_close_sent = False
 
             if now.second == 3:
                 fill_missing_data()
-                df = get_minute_data(1)
-                if not df.empty:
-                    save_to_db(df)
                 data_analysis_improved(mode, resample_interval=RESAMPLE_INTERVAL)
 
             time.sleep(0.5)
@@ -320,9 +327,11 @@ def run_mode(mode):
     if mode in [1, 2]:
         data_collection_thread(mode)
     elif mode == 3:
+        fill_missing_data()
         print("🧪 모드 3: 전략 개발 및 테스트 모드 실행")
+        a = main_api.get_overseas_inquire_present_balance(svr='vps', dv="02", dvsn="01", natn="000", mkt="00", inqr_dvsn="00")
         data_analysis_improved(mode, resample_interval=RESAMPLE_INTERVAL)
 
 if __name__ == "__main__":
-    mode = 2
+    mode = 3
     run_mode(mode)
